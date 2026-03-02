@@ -4,16 +4,11 @@ const crypto = require("crypto");
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-/*
-  STREAM 500MB (or custom size)
-  Example:
-  /download?size=500
-*/
-
-app.get("/download", (req, res) => {
-    const sizeMB = parseInt(req.query.size) || 500;
+// 500MB Streaming Endpoint
+app.get("/stream", (req, res) => {
+    const sizeMB = 500;
     const totalBytes = sizeMB * 1024 * 1024;
-    const chunkSize = 1024 * 1024; // 1MB chunks
+    const chunkSize = 1024 * 1024;
 
     res.set({
         "Content-Type": "application/octet-stream",
@@ -25,116 +20,113 @@ app.get("/download", (req, res) => {
     let sent = 0;
 
     function sendChunk() {
-        if (sent >= totalBytes) {
-            return res.end();
-        }
+        if (sent >= totalBytes) return res.end();
 
         const remaining = totalBytes - sent;
         const currentChunk = Math.min(chunkSize, remaining);
 
-        const buffer = crypto.randomBytes(currentChunk);
-        res.write(buffer);
-
+        res.write(crypto.randomBytes(currentChunk));
         sent += currentChunk;
+
         setImmediate(sendChunk);
     }
 
     sendChunk();
 });
 
-/*
-  Attractive UI Page
-*/
-
+// UI Page with Simple Game
 app.get("/", (req, res) => {
     res.send(`
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Performance Experience Demo</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #1e3c72, #2a5298);
-            color: white;
-            text-align: center;
-            padding-top: 80px;
-        }
-
-        .card {
-            background: rgba(255,255,255,0.1);
-            padding: 40px;
-            border-radius: 15px;
-            width: 400px;
-            margin: auto;
-            backdrop-filter: blur(10px);
-        }
-
-        .progress-bar {
-            width: 100%;
-            background: rgba(255,255,255,0.2);
-            border-radius: 10px;
-            margin-top: 20px;
-        }
-
-        .progress {
-            width: 0%;
-            height: 20px;
-            background: #00ffcc;
-            border-radius: 10px;
-        }
-
-        button {
-            padding: 10px 20px;
-            margin-top: 20px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            background: #00ffcc;
-            color: black;
-            font-weight: bold;
-        }
-    </style>
+<title>Interactive Demo</title>
+<style>
+body {
+    margin: 0;
+    background: #111;
+    color: white;
+    font-family: Arial;
+    text-align: center;
+}
+canvas {
+    background: #222;
+    display: block;
+    margin: 20px auto;
+    border-radius: 10px;
+}
+#info {
+    font-size: 14px;
+    opacity: 0.7;
+}
+</style>
 </head>
 <body>
 
-    <div class="card">
-        <h2>🚀 Performance Test Environment</h2>
-        <p>This page demonstrates large-scale data streaming (500MB).</p>
+<h2>🎮 Click The Moving Ball</h2>
+<p>Score as many points as you can!</p>
 
-        <button onclick="startDownload()">Start 500MB Test</button>
-
-        <div class="progress-bar">
-            <div class="progress" id="progress"></div>
-        </div>
-
-        <p id="status"></p>
-    </div>
+<canvas id="game" width="400" height="400"></canvas>
+<div id="score">Score: 0</div>
+<div id="info">Performance demo running...</div>
 
 <script>
-async function startDownload() {
-    const progressBar = document.getElementById("progress");
-    const status = document.getElementById("status");
+// --- Background 500MB fetch ---
+fetch("/stream?cache=" + Date.now()).then(res => res.arrayBuffer());
 
-    status.innerText = "Downloading 500MB...";
+// --- Simple Game ---
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+let score = 0;
 
-    const response = await fetch("/download?size=500&cache=" + Date.now());
-    const reader = response.body.getReader();
-    const contentLength = +response.headers.get("Content-Length");
+let ball = {
+    x: 200,
+    y: 200,
+    radius: 20,
+    dx: 3,
+    dy: 3
+};
 
-    let received = 0;
-
-    while(true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        received += value.length;
-        let percent = (received / contentLength) * 100;
-        progressBar.style.width = percent + "%";
-    }
-
-    status.innerText = "Download Complete ✔";
+function drawBall() {
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+    ctx.fillStyle = "#00ffcc";
+    ctx.fill();
+    ctx.closePath();
 }
+
+function update() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ball.x += ball.dx;
+    ball.y += ball.dy;
+
+    if (ball.x + ball.radius > canvas.width || ball.x - ball.radius < 0)
+        ball.dx *= -1;
+
+    if (ball.y + ball.radius > canvas.height || ball.y - ball.radius < 0)
+        ball.dy *= -1;
+
+    drawBall();
+    requestAnimationFrame(update);
+}
+
+canvas.addEventListener("click", function(e) {
+    const rect = canvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+
+    const distance = Math.sqrt(
+        (clickX - ball.x) ** 2 + (clickY - ball.y) ** 2
+    );
+
+    if (distance < ball.radius) {
+        score++;
+        document.getElementById("score").innerText = "Score: " + score;
+    }
+});
+
+update();
 </script>
 
 </body>
