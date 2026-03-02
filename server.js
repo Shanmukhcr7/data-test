@@ -10,30 +10,47 @@ const PORT = process.env.PORT || 8080;
 const LOCAL_VIDEO_PATH = path.normalize("C:\\Users\\shanm\\Downloads\\net worker\\rick_roll.mp4");
 
 /**
- * 500MB Streaming Endpoint (Background Stress Process)
+ * 500MB Streaming Endpoint
+ * UPDATED: Uses backpressure handling to prevent 502 Bad Gateway errors.
+ * It waits for the 'drain' event before sending more data.
  */
 app.get("/stream", (req, res) => {
     const sizeMB = 500;
     const totalBytes = sizeMB * 1024 * 1024;
-    const chunkSize = 1024 * 1024;
+    const chunkSize = 64 * 1024; // Smaller chunks for better stability
 
-    res.set({
+    res.writeHead(200, {
         "Content-Type": "application/octet-stream",
         "Content-Length": totalBytes,
         "Cache-Control": "no-store",
-        "Content-Encoding": "identity"
     });
 
     let sent = 0;
-    function sendChunk() {
-        if (sent >= totalBytes) return res.end();
-        const remaining = totalBytes - sent;
-        const currentChunk = Math.min(chunkSize, remaining);
-        res.write(crypto.randomBytes(currentChunk));
-        sent += currentChunk;
-        setImmediate(sendChunk);
+
+    function send() {
+        while (sent < totalBytes) {
+            const remaining = totalBytes - sent;
+            const currentChunk = Math.min(chunkSize, remaining);
+            const buffer = crypto.randomBytes(currentChunk);
+            
+            sent += currentChunk;
+            const canContinue = res.write(buffer);
+            
+            if (!canContinue) {
+                // If buffer is full, wait for it to drain
+                res.once('drain', send);
+                return;
+            }
+        }
+        res.end();
     }
-    sendChunk();
+
+    send();
+
+    req.on("close", () => {
+        // Stop process if client disconnects
+        sent = totalBytes;
+    });
 });
 
 /**
@@ -43,7 +60,7 @@ app.get("/victory-video", (req, res) => {
     if (fs.existsSync(LOCAL_VIDEO_PATH)) {
         res.sendFile(LOCAL_VIDEO_PATH);
     } else {
-        res.status(404).send("Video not found. Please check path in server.js");
+        res.status(404).send("Local video file not found.");
     }
 });
 
@@ -57,7 +74,7 @@ app.get("/", (req, res) => {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Reaction Elite | 9:16 Mobile Edition</title>
+    <title>Reaction Elite | Fixed UI</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap');
@@ -66,67 +83,70 @@ app.get("/", (req, res) => {
             --accent: #10b981;
         }
 
-        /* Use dynamic viewport height to prevent mobile cutoff */
+        /* Dynamic Viewport Height (dvh) prevents cutoffs by mobile UI bars */
         body { 
             font-family: 'Outfit', sans-serif; 
             background: #020617;
             color: white;
             height: 100dvh;
             overflow: hidden;
-            touch-action: none;
             display: flex;
             flex-direction: column;
             -webkit-tap-highlight-color: transparent;
         }
 
         .bg-grid {
-            background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0);
-            background-size: 25px 25px;
+            background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.02) 1px, transparent 0);
+            background-size: 30px 30px;
         }
 
-        .glass {
-            backdrop-filter: blur(20px);
-            background: rgba(15, 23, 42, 0.8);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        /* Target Design */
+        /* High-Contrast Tactical Target */
         .target { 
             position: absolute;
             z-index: 40;
-            transition: transform 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            transition: transform 0.05s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             will-change: transform, top, left;
         }
         .target-orb {
-            width: 65px;
-            height: 65px;
+            width: 75px;
+            height: 75px;
             background: var(--accent);
+            border: 4px solid #fff;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            border: 4px solid #fff;
-            box-shadow: 0 0 25px rgba(16, 185, 129, 0.5);
+            box-shadow: 0 0 40px rgba(16, 185, 129, 0.6);
         }
-        .target:active { transform: scale(0.8); }
+        .target-core {
+            width: 15px;
+            height: 15px;
+            background: #000;
+            border-radius: 50%;
+            border: 2px solid #fff;
+        }
 
-        /* Strict 9:16 Video Container */
-        .video-wrapper {
+        /* Strict 9:16 Vertical Container */
+        .video-9-16 {
             width: 100%;
-            max-width: 220px; /* Constrain width on larger screens */
+            max-width: min(70vw, 240px);
             aspect-ratio: 9 / 16;
             background: #000;
-            border-radius: 1.25rem;
+            border-radius: 1.5rem;
             overflow: hidden;
             border: 2px solid rgba(255,255,255,0.1);
             position: relative;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
         }
-        
-        .video-wrapper video {
+        .video-9-16 video {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
-            object-fit: cover; /* Ensures video fills 9:16 perfectly */
+            object-fit: cover;
+        }
+
+        .glass {
+            backdrop-filter: blur(20px);
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         .btn-time {
@@ -139,111 +159,105 @@ app.get("/", (req, res) => {
             color: #000;
             border-color: #fff;
             transform: scale(1.05);
+            box-shadow: 0 0 20px var(--accent);
         }
 
-        /* Modal scroll fix for small phones */
-        .scroll-safe {
-            max-height: 85vh;
-            overflow-y: auto;
-            scrollbar-width: none;
+        #modalOverlay {
+            padding: env(safe-area-inset-top) 1.5rem env(safe-area-inset-bottom);
         }
-        .scroll-safe::-webkit-scrollbar { display: none; }
     </style>
 </head>
-<body class="bg-grid p-4">
+<body class="bg-grid">
 
-    <!-- HUD Headers -->
-    <div class="w-full max-w-md mx-auto flex justify-between gap-3 z-50 pointer-events-none mb-4">
-        <div class="glass flex-1 p-3 rounded-2xl text-center">
-            <p class="text-[9px] uppercase font-black text-emerald-400 tracking-tighter">Time Left</p>
-            <p id="timerDisplay" class="text-xl font-black tabular-nums">--</p>
+    <!-- Top HUD - Pushed to absolute top -->
+    <div class="w-full max-w-md mx-auto flex justify-between gap-4 p-4 z-[110] relative pointer-events-none">
+        <div class="glass flex-1 p-3 rounded-3xl text-center">
+            <p class="text-[9px] uppercase font-black text-emerald-400">Timer</p>
+            <p id="timerDisplay" class="text-xl font-black">--</p>
         </div>
-        <div class="glass flex-1 p-3 rounded-2xl text-center">
-            <p class="text-[9px] uppercase font-black text-indigo-400 tracking-tighter">Reaction</p>
-            <p id="currentReaction" class="text-xl font-black tabular-nums">---</p>
+        <div class="glass flex-1 p-3 rounded-3xl text-center text-right">
+            <p class="text-[9px] uppercase font-black text-indigo-400">Reaction</p>
+            <p id="currentReaction" class="text-xl font-black">---</p>
         </div>
     </div>
 
-    <!-- Main Game Context -->
-    <div id="gameContainer" class="relative flex-1 w-full max-w-md mx-auto rounded-[2.5rem] border border-white/5 bg-slate-950/20 shadow-inner overflow-hidden">
+    <!-- Central Interactive Area -->
+    <div id="gameContainer" class="relative flex-1 w-full max-w-md mx-auto rounded-[3rem] border border-white/5 bg-slate-950/20 shadow-2xl overflow-hidden mb-4">
         
-        <!-- Interactive Target -->
+        <!-- The Target -->
         <div id="gameTarget" class="target hidden cursor-pointer select-none">
              <div class="target-orb">
-                <div class="w-7 h-7 bg-white rounded-full flex items-center justify-center">
-                    <div class="w-3 h-3 bg-slate-900 rounded-full"></div>
-                </div>
+                <div class="target-core"></div>
              </div>
         </div>
 
-        <!-- Dynamic Overlay -->
-        <div id="modalOverlay" class="absolute inset-0 z-[100] flex flex-col items-center justify-center p-6 bg-slate-950/95 backdrop-blur-xl">
+        <!-- Dynamic Overlay (Selection / Results) -->
+        <div id="modalOverlay" class="absolute inset-0 z-[100] flex flex-col items-center justify-center bg-slate-950/95 backdrop-blur-3xl transition-opacity duration-500">
             
-            <!-- Step 1: Selection -->
-            <div id="selectionView" class="scroll-safe w-full flex flex-col items-center text-center">
-                <div class="mb-8">
-                    <h1 class="text-4xl font-black tracking-tighter italic leading-none">
+            <!-- Step 1: Duration Selection -->
+            <div id="selectionView" class="w-full flex flex-col items-center px-4">
+                <div class="mb-10 text-center">
+                    <h1 class="text-4xl font-black tracking-tighter italic italic">
                         ELITE<span class="text-emerald-500 not-italic">REACTION</span>
                     </h1>
-                    <p class="text-slate-500 text-[9px] font-bold uppercase tracking-[0.4em] mt-2">Mobile Performance Test</p>
+                    <p class="text-slate-500 text-[10px] font-bold uppercase tracking-[0.4em] mt-2">Mobile Performance Test</p>
                 </div>
                 
-                <div class="w-full space-y-6">
-                    <h2 class="text-[10px] font-black uppercase text-emerald-500 tracking-widest">1. Choose Duration</h2>
-                    <div class="grid grid-cols-3 gap-2">
-                        <button onclick="pickTime(this, 5)" class="btn-time py-4 rounded-xl font-black text-lg">5s</button>
-                        <button onclick="pickTime(this, 10)" class="btn-time py-4 rounded-xl font-black text-lg">10s</button>
-                        <button onclick="pickTime(this, 15)" class="btn-time py-4 rounded-xl font-black text-lg">15s</button>
-                        <button onclick="pickTime(this, 20)" class="btn-time py-4 rounded-xl font-black text-lg">20s</button>
-                        <button onclick="pickTime(this, 25)" class="btn-time py-4 rounded-xl font-black text-lg">25s</button>
-                        <button onclick="pickTime(this, 30)" class="btn-time py-4 rounded-xl font-black text-lg">30s</button>
+                <div class="glass w-full rounded-[2.5rem] p-8 border-white/10 text-center">
+                    <h2 class="text-[10px] font-black uppercase text-emerald-500 tracking-widest mb-6 italic">1. Select Endurance</h2>
+                    <div class="grid grid-cols-3 gap-3 mb-10">
+                        <button onclick="pickTime(this, 5)" class="btn-time py-4 rounded-2xl font-black text-xl">5s</button>
+                        <button onclick="pickTime(this, 10)" class="btn-time py-4 rounded-2xl font-black text-xl">10s</button>
+                        <button onclick="pickTime(this, 15)" class="btn-time py-4 rounded-2xl font-black text-xl">15s</button>
+                        <button onclick="pickTime(this, 20)" class="btn-time py-4 rounded-2xl font-black text-xl">20s</button>
+                        <button onclick="pickTime(this, 25)" class="btn-time py-4 rounded-2xl font-black text-xl">25s</button>
+                        <button onclick="pickTime(this, 30)" class="btn-time py-4 rounded-2xl font-black text-xl">30s</button>
                     </div>
 
-                    <div id="startAction" class="opacity-0 pointer-events-none transition-all duration-300">
-                        <p class="text-[9px] font-black mb-3 text-slate-500 uppercase tracking-widest">2. Ready?</p>
-                        <button onclick="runCountdown()" class="bg-white text-black font-black py-4 w-full rounded-full text-sm uppercase tracking-widest shadow-2xl active:scale-95">Start Now</button>
+                    <div id="startAction" class="opacity-0 pointer-events-none transition-all duration-300 transform scale-90">
+                        <button onclick="runCountdown()" class="bg-white text-black font-black py-5 w-full rounded-full text-sm uppercase tracking-widest shadow-2xl active:scale-95">Initiate Start</button>
                     </div>
                 </div>
             </div>
 
             <!-- Step 2: Victory Result -->
-            <div id="finishView" class="hidden scroll-safe w-full flex flex-col items-center">
-                <div class="glass p-4 rounded-3xl w-full max-w-[220px] mb-4 text-center">
-                    <div class="flex justify-between items-center px-2">
+            <div id="finishView" class="hidden w-full h-full flex flex-col items-center justify-center p-4">
+                <div class="glass p-6 rounded-[2.5rem] w-full max-w-[280px] mb-6 text-center shadow-xl border-emerald-500/20">
+                    <div class="flex justify-around items-center">
                         <div>
-                            <p class="text-[8px] text-slate-500 uppercase font-black">Avg Speed</p>
-                            <p id="avgResult" class="text-xl font-black">0ms</p>
+                            <p class="text-[9px] text-slate-500 uppercase font-black">Average</p>
+                            <p id="avgResult" class="text-2xl font-black">0ms</p>
                         </div>
-                        <div class="w-px h-6 bg-white/10"></div>
+                        <div class="w-px h-8 bg-white/10"></div>
                         <div>
-                            <p class="text-[8px] text-slate-500 uppercase font-black">Hits</p>
-                            <p id="tapsResult" class="text-xl font-black">0</p>
+                            <p class="text-[9px] text-slate-500 uppercase font-black">Hits</p>
+                            <p id="tapsResult" class="text-2xl font-black">0</p>
                         </div>
                     </div>
                 </div>
                 
-                <div class="video-wrapper">
-                    <video id="vicVideo" playsinline loop crossorigin="anonymous" preload="auto">
+                <div class="video-9-16 shadow-2xl mb-8">
+                    <video id="vicVideo" playsinline loop crossorigin="anonymous">
                         <source src="/victory-video" type="video/mp4">
                     </video>
                 </div>
                 
-                <button onclick="location.reload()" class="mt-6 bg-emerald-500 text-black font-black py-4 px-10 rounded-full text-[10px] uppercase tracking-widest active:scale-95 shadow-lg">New Session</button>
+                <button onclick="location.reload()" class="bg-emerald-500 text-black font-black py-4 px-12 rounded-full text-[11px] uppercase tracking-widest shadow-lg active:scale-95">Restart Session</button>
             </div>
         </div>
 
-        <!-- Big Countdown -->
-        <div id="countdownBox" class="absolute inset-0 flex items-center justify-center opacity-0 pointer-events-none text-9xl font-black z-[200] text-emerald-500"></div>
+        <!-- Big Center Countdown -->
+        <div id="countdownBox" class="absolute inset-0 flex items-center justify-center opacity-0 pointer-events-none text-[10rem] font-black z-[200] text-emerald-500 italic"></div>
     </div>
 
     <!-- Status Footer -->
-    <div class="w-full max-w-md mx-auto mt-4 glass p-3 rounded-2xl flex items-center justify-center gap-4">
-        <div class="flex items-center gap-2">
-            <span class="relative flex h-2 w-2">
+    <div class="w-full max-w-md mx-auto mb-6 glass p-4 rounded-3xl flex items-center justify-center gap-6">
+        <div class="flex items-center gap-3">
+            <span class="relative flex h-2.5 w-2.5">
                 <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
             </span>
-            <p class="text-[8px] font-black uppercase tracking-widest text-slate-400">Stream: <span class="text-emerald-400">LIVE Active</span></p>
+            <p class="text-[9px] font-black uppercase tracking-widest text-slate-500">Network: <span class="text-emerald-400">500MB Streaming</span></p>
         </div>
     </div>
 
@@ -266,7 +280,7 @@ app.get("/", (req, res) => {
         const vicVideo = document.getElementById('vicVideo');
         const countdownBox = document.getElementById('countdownBox');
 
-        // Start background load immediately
+        // Automatic Background Load
         window.addEventListener('load', () => {
             fetch('/stream?s=' + Date.now()).then(res => {
                 const reader = res.body.getReader();
@@ -281,14 +295,16 @@ app.get("/", (req, res) => {
             selectedTime = time;
             timeLeft = time;
             timerDisplay.innerText = time.toFixed(1) + 's';
+            
             startAction.classList.remove('opacity-0', 'pointer-events-none');
+            startAction.classList.add('opacity-100', 'scale-100');
             if (navigator.vibrate) navigator.vibrate(15);
         }
 
         function moveTarget() {
             const rect = gameContainer.getBoundingClientRect();
-            const size = 65;
-            const pad = 20;
+            const size = 75;
+            const pad = 30;
             const x = Math.max(pad, Math.random() * (rect.width - size - pad));
             const y = Math.max(pad, Math.random() * (rect.height - size - pad));
             gameTarget.style.left = x + 'px';
@@ -354,8 +370,8 @@ app.get("/", (req, res) => {
             document.getElementById('tapsResult').innerText = total;
             
             vicVideo.play().catch(() => {
-                // If autoplay blocked, wait for user click on finish view
-                finishView.addEventListener('click', () => vicVideo.play(), {once: true});
+                // Autoplay guard
+                modalOverlay.addEventListener('click', () => vicVideo.play(), {once: true});
             });
         }
 
@@ -368,5 +384,5 @@ app.get("/", (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Mobile Elite Simulator running on port ${PORT}`);
+    console.log(`Server live on port ${PORT}`);
 });
