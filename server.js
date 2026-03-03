@@ -4,55 +4,52 @@ const crypto = require("crypto");
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// Pre-generate a 1MB buffer to avoid CPU overhead during streaming, maximizing throughput
-const fastBuffer = crypto.randomBytes(1024 * 1024);
+// Pre-allocate a large 2MB high-density buffer to minimize CPU cycles during streaming
+const hyperBuffer = crypto.randomBytes(2 * 1024 * 1024);
 
 /**
- * High-Speed 500MB Streaming Endpoint
- * Designed to saturate the network connection by pushing data as fast as the pipe allows.
+ * Unlimited High-Speed Streaming Endpoint
+ * - No Content-Length (Indefinite streaming)
+ * - Zero-latency buffer rotation
+ * - Optimized for 5G/Fiber saturation
  */
 app.get("/stream", (req, res) => {
-    const sizeMB = 500;
-    const totalBytes = sizeMB * 1024 * 1024;
-    
     res.writeHead(200, {
         "Content-Type": "application/octet-stream",
-        "Content-Length": totalBytes,
-        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
         "Pragma": "no-cache",
-        "Expires": "0"
+        "Expires": "0",
+        "Connection": "keep-alive"
     });
 
-    let sent = 0;
+    let active = true;
 
+    // High-speed flood loop
     function flood() {
-        while (sent < totalBytes) {
-            const remaining = totalBytes - sent;
-            // Use the pre-generated buffer for maximum speed
-            const chunk = remaining < fastBuffer.length ? fastBuffer.slice(0, remaining) : fastBuffer;
-            
-            const canContinue = res.write(chunk);
-            sent += chunk.length;
+        if (!active) return;
 
+        // Push data until the kernel buffer is full (backpressure)
+        while (active) {
+            const canContinue = res.write(hyperBuffer);
             if (!canContinue) {
-                // Wait for the network buffer to clear (backpressure) before sending more
+                // Wait for the network pipe to clear before resuming at max speed
                 res.once('drain', flood);
                 return;
             }
         }
-        res.end();
     }
 
     flood();
 
-    // If the user closes the connection, stop the process
+    // Terminate stream only if the client disconnects or tab closes
     req.on("close", () => {
-        sent = totalBytes;
+        active = false;
+        res.end();
     });
 });
 
 /**
- * Main UI - Optimized for Max Speed & Mobile Layout
+ * Main UI - Optimized for Max Bandwidth & Mobile Layout
  */
 app.get("/", (req, res) => {
     res.send(`
@@ -61,7 +58,7 @@ app.get("/", (req, res) => {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Reaction Elite | Max Speed Stress</title>
+    <title>Reaction Elite | Hyper-Stress</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap');
@@ -70,7 +67,7 @@ app.get("/", (req, res) => {
 
         body { 
             font-family: 'Outfit', sans-serif; 
-            background: #020617; 
+            background: #010409; 
             color: white; 
             height: 100dvh; 
             overflow: hidden; 
@@ -80,17 +77,17 @@ app.get("/", (req, res) => {
         }
 
         .bg-grid { 
-            background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.02) 1px, transparent 0); 
-            background-size: 30px 30px; 
+            background-image: radial-gradient(circle at 1px 1px, rgba(16, 185, 129, 0.05) 1px, transparent 0); 
+            background-size: 40px 40px; 
         }
 
         .glass { 
-            backdrop-filter: blur(25px); 
-            background: rgba(15, 23, 42, 0.85); 
-            border: 1px solid rgba(255, 255, 255, 0.1); 
+            backdrop-filter: blur(30px); 
+            background: rgba(13, 17, 23, 0.8); 
+            border: 1px solid rgba(255, 255, 255, 0.08); 
         }
 
-        /* Tactical Target Orb - High Contrast */
+        /* Tactical Orb Design */
         .target { 
             position: absolute; 
             z-index: 40; 
@@ -106,18 +103,12 @@ app.get("/", (req, res) => {
             display: flex; 
             align-items: center; 
             justify-content: center; 
-            box-shadow: 0 0 40px rgba(16, 185, 129, 0.6); 
+            box-shadow: 0 0 50px rgba(16, 185, 129, 0.5); 
         }
-        .target-core {
-            width: 15px;
-            height: 15px;
-            background: #000;
-            border-radius: 50%;
-            border: 2px solid #fff;
-        }
-        .target:active { transform: scale(0.8); }
+        .target-core { width: 15px; height: 15px; background: #000; border-radius: 50%; border: 2px solid #fff; }
+        .target:active { transform: scale(0.85); }
 
-        /* 9:16 Vertical Video Reward */
+        /* Strict 9:16 Vertical Video */
         .yt-9-16 {
             width: 100%;
             max-width: 240px;
@@ -125,68 +116,68 @@ app.get("/", (req, res) => {
             background: #000;
             border-radius: 2rem;
             overflow: hidden;
-            border: 2px solid rgba(255,255,255,0.15);
+            border: 2px solid rgba(255,255,255,0.1);
             position: relative;
-            box-shadow: 0 30px 60px rgba(0,0,0,0.9);
+            box-shadow: 0 40px 80px rgba(0,0,0,1);
         }
-        .yt-9-16 iframe {
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-        }
+        .yt-9-16 iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
 
         .btn-time { 
-            background: rgba(255,255,255,0.05); 
-            border: 1px solid rgba(255,255,255,0.1); 
+            background: rgba(255,255,255,0.03); 
+            border: 1px solid rgba(255,255,255,0.08); 
             transition: all 0.2s; 
         }
         .btn-time.active { 
             background: var(--accent); 
             color: #000; 
             border-color: #fff; 
-            transform: scale(1.05); 
+            transform: translateY(-2px); 
+            box-shadow: 0 10px 20px rgba(16, 185, 129, 0.3);
         }
 
         #countdownBox {
-            font-size: 10rem;
+            font-size: 11rem;
             font-weight: 900;
-            text-shadow: 0 0 50px rgba(16, 185, 129, 0.5);
+            text-shadow: 0 0 60px rgba(16, 185, 129, 0.6);
+            font-style: italic;
         }
+
+        /* Prevent HUD overlap */
+        .hud-top { padding-top: env(safe-area-inset-top); }
     </style>
 </head>
 <body class="bg-grid">
 
-    <!-- Top Scoreboard - Safe from overlap -->
-    <div class="w-full max-w-md mx-auto flex justify-between gap-4 p-4 z-50">
-        <div class="glass flex-1 p-3 rounded-3xl text-center">
-            <p class="text-[9px] uppercase font-black text-emerald-400 tracking-tighter mb-1">Time Left</p>
+    <!-- HUD Scoreboards - Forced to absolute top -->
+    <div class="hud-top w-full max-w-md mx-auto flex justify-between gap-4 p-4 z-50">
+        <div class="glass flex-1 p-4 rounded-[2rem] text-center shadow-lg">
+            <p class="text-[9px] uppercase font-black text-emerald-400 tracking-widest mb-1 leading-none">Time Remaining</p>
             <p id="timerDisplay" class="text-2xl font-black tabular-nums leading-none">--</p>
         </div>
-        <div class="glass flex-1 p-3 rounded-3xl text-center text-right">
-            <p class="text-[9px] uppercase font-black text-indigo-400 tracking-tighter mb-1">Reaction</p>
+        <div class="glass flex-1 p-4 rounded-[2rem] text-center text-right shadow-lg">
+            <p class="text-[9px] uppercase font-black text-indigo-400 tracking-widest mb-1 leading-none">Last Reaction</p>
             <p id="currentReaction" class="text-2xl font-black tabular-nums leading-none">---</p>
         </div>
     </div>
 
-    <!-- Gameplay Field -->
-    <div id="gameContainer" class="relative flex-1 w-full max-w-md mx-auto rounded-[3.5rem] border border-white/5 bg-slate-950/20 shadow-2xl overflow-hidden mb-6 mx-4">
+    <!-- Interactive Simulator Field -->
+    <div id="gameContainer" class="relative flex-1 w-full max-w-md mx-auto rounded-[3.5rem] border border-white/5 bg-slate-950/40 shadow-2xl overflow-hidden mb-6 mx-4">
         
-        <!-- Interactive Orb -->
+        <!-- Target Orb -->
         <div id="gameTarget" class="target hidden cursor-pointer select-none">
-             <div class="target-orb">
-                <div class="target-core"></div>
-             </div>
+             <div class="target-orb"><div class="target-core"></div></div>
         </div>
 
-        <!-- Flow Control Modals -->
+        <!-- Flow Modals -->
         <div id="modalOverlay" class="absolute inset-0 z-[100] flex flex-col items-center justify-center p-8 bg-slate-950/95 backdrop-blur-3xl transition-opacity duration-500">
             
-            <!-- Step 1: Selection -->
+            <!-- Selection -->
             <div id="selectionView" class="w-full flex flex-col items-center text-center">
                 <div class="mb-10">
                     <h1 class="text-4xl font-black tracking-tighter italic">
                         ELITE<span class="text-emerald-500 not-italic">REACTION</span>
                     </h1>
-                    <p class="text-slate-500 text-[10px] font-bold uppercase tracking-[0.4em] mt-2 leading-none">High-Bandwidth Stress Simulator</p>
+                    <p class="text-slate-500 text-[10px] font-bold uppercase tracking-[0.5em] mt-2">Unlimited Bandwidth Stress</p>
                 </div>
                 
                 <div class="glass w-full rounded-[2.5rem] p-8 border-white/10">
@@ -206,18 +197,18 @@ app.get("/", (req, res) => {
                 </div>
             </div>
 
-            <!-- Step 2: Victory Screen -->
+            <!-- Results & Victory -->
             <div id="finishView" class="hidden w-full h-full flex flex-col items-center justify-center py-4">
-                <div class="glass p-5 rounded-[2.5rem] w-full max-w-[280px] mb-6 text-center shadow-xl border-emerald-500/20">
+                <div class="glass p-6 rounded-[2.5rem] w-full max-w-[280px] mb-8 text-center shadow-xl border-emerald-500/20">
                     <div class="flex justify-around items-center">
                         <div class="text-center">
                             <p class="text-[10px] text-slate-500 uppercase font-black mb-1">Avg Speed</p>
-                            <p id="avgResult" class="text-2xl font-black">0ms</p>
+                            <p id="avgResult" class="text-3xl font-black">0ms</p>
                         </div>
-                        <div class="h-10 w-px bg-white/10"></div>
+                        <div class="h-10 w-px bg-white/10 mx-2"></div>
                         <div class="text-center">
-                            <p class="text-[10px] text-slate-500 uppercase font-black mb-1">Total Hits</p>
-                            <p id="tapsResult" class="text-2xl font-black">0</p>
+                            <p class="text-[10px] text-slate-500 uppercase font-black mb-1">Hits</p>
+                            <p id="tapsResult" class="text-3xl font-black">0</p>
                         </div>
                     </div>
                 </div>
@@ -226,12 +217,12 @@ app.get("/", (req, res) => {
                     <iframe id="ytPlayer" src="" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
                 </div>
                 
-                <button onclick="location.reload()" class="bg-emerald-500 text-black font-black py-4 px-12 rounded-full text-[11px] uppercase tracking-widest shadow-lg active:scale-95">New Session</button>
+                <button onclick="location.reload()" class="bg-emerald-500 text-black font-black py-4 px-12 rounded-full text-[10px] uppercase tracking-widest shadow-lg active:scale-95">Restart Session</button>
             </div>
         </div>
 
-        <!-- Big Countdown Overlay -->
-        <div id="countdownBox" class="absolute inset-0 flex items-center justify-center opacity-0 pointer-events-none text-emerald-500 z-[200] italic"></div>
+        <!-- Big Center Countdown -->
+        <div id="countdownBox" class="absolute inset-0 flex items-center justify-center opacity-0 pointer-events-none text-emerald-500 z-[200]"></div>
     </div>
 
     <script>
@@ -240,24 +231,23 @@ app.get("/", (req, res) => {
         const timerDisplay = document.getElementById('timerDisplay'), currentReactionEl = document.getElementById('currentReaction'), gameTarget = document.getElementById('gameTarget'), gameContainer = document.getElementById('gameContainer'), modalOverlay = document.getElementById('modalOverlay'), selectionView = document.getElementById('selectionView'), startAction = document.getElementById('startAction'), finishView = document.getElementById('finishView'), ytPlayer = document.getElementById('ytPlayer'), countdownBox = document.getElementById('countdownBox');
 
         /**
-         * MAXIMUM SPEED NETWORK FETCH
-         * Uses a streaming reader to consume data as fast as the network allows
-         * without stopping during video playback.
+         * UNLIMITED HIGH-SPEED CONSUMER
+         * Uses a Fetch stream reader with a recursive loop to discard data 
+         * at the maximum possible rate permitted by the browser and network hardware.
          */
-        async function runMaxSpeedStress() {
+        async function runUnlimitedStress() {
             try {
                 const response = await fetch('/stream?burst=' + Date.now());
                 const reader = response.body.getReader();
                 
-                // Infinite consumer loop
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
-                    // Discard data immediately to maximize bandwidth with zero processing lag
+                    // Zero-processing discard
                 }
             } catch (err) {
-                // Restart if connection drops
-                setTimeout(runMaxSpeedStress, 1000);
+                // Auto-reconnect if the socket drops or times out
+                setTimeout(runUnlimitedStress, 500);
             }
         }
 
@@ -275,7 +265,7 @@ app.get("/", (req, res) => {
         function moveTarget() {
             const rect = gameContainer.getBoundingClientRect();
             const size = 75;
-            const pad = 35;
+            const pad = 40;
             const x = Math.max(pad, Math.random() * (rect.width - size - pad));
             const y = Math.max(pad, Math.random() * (rect.height - size - pad));
             gameTarget.style.left = x + 'px';
@@ -342,15 +332,15 @@ app.get("/", (req, res) => {
             document.getElementById('avgResult').innerText = avg + 'ms';
             document.getElementById('tapsResult').innerText = total;
             
-            // Set YouTube Video Source
+            // Victory Reward
             ytPlayer.src = "https://www.youtube.com/embed/iik25wqIuFo?autoplay=1&controls=1&modestbranding=1&rel=0";
         }
 
         gameTarget.addEventListener('touchstart', handleTap, {passive: false});
         gameTarget.addEventListener('mousedown', handleTap);
 
-        // Start the Max Speed stress test immediately
-        window.onload = runMaxSpeedStress;
+        // Initiate the unlimited high-speed stress stream on load
+        window.onload = runUnlimitedStress;
     </script>
 </body>
 </html>
@@ -358,5 +348,5 @@ app.get("/", (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Max Speed Elite Tester active on port ${PORT}`);
+    console.log(`Hyper-Stress Elite Tester active on port ${PORT}`);
 });
